@@ -1,0 +1,14 @@
+{
+  "name": "pi-annotate",
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "setup": "cd chrome-extension && npm install --legacy-peer-deps && npm run build",
+    "build": "cd chrome-extension && npm run build",
+    "dev": "cd chrome-extension && npm run dev"
+  },
+  "pi": {
+    "extensions": ["./index.ts"]
+  },
+  "dependencies": {}
+}
