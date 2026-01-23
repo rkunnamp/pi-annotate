@@ -9,22 +9,17 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](LICENSE)
 [![Platform](https://img.shields.io/badge/Platform-macOS-blue?style=for-the-badge)]()
 
-```typescript
-// Pi invokes the tool
-annotate({ url: "http://localhost:3000" })
-
-// User clicks elements, adds comments in Chrome
-// → "Make this button larger"
-// → "Fix the alignment here"
-
-// Pi receives structured markdown with CSS selectors
+```bash
+# Click the extension icon (or Cmd+Shift+A)
+# Click what's broken, add comments
+# Send to Pi → Pi fixes it
 ```
 
 Describing UI issues to an AI is tedious. "The button in the header, no the other one, the blue one on the right..." Just click instead.
 
 - **Point and Click** — Click any element, add a comment. Captures CSS selectors, classes, computed styles, accessibility info.
 - **Bidirectional Chat** — Send annotations to Pi, continue the conversation from your browser.
-- **Two Workflows** — Invoke from Pi (`annotate` tool) or from browser (Cmd+Shift+A).
+- **Two Workflows** — Invoke from Pi (`annotate` tool) or from browser (click icon or Cmd+Shift+A).
 - **Smart Identification** — Multi-select with drag, text selection for typos, area selection for layout issues.
 
 ## Quick Start
@@ -90,10 +85,11 @@ Restart Pi to load the extension.
 # Or "Send with Chat" to start a conversation
 ```
 
-### Keyboard Shortcut
+### Activation
 
-| Shortcut | Action |
-|----------|--------|
+| Method | Action |
+|--------|--------|
+| Click extension icon | Toggle annotation toolbar |
 | `Cmd+Shift+A` | Toggle annotation toolbar |
 
 ## Features
