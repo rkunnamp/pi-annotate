@@ -34,6 +34,9 @@ import {
   IconMoon,
   IconXmarkLarge,
   IconSend,
+  IconCamera,
+  IconCrop,
+  IconViewport,
 } from "./icons";
 import {
   identifyElement,
@@ -49,8 +52,13 @@ import {
   saveAnnotations,
   getStorageKey,
 } from "../utils/storage";
+import {
+  captureArea,
+  captureElement,
+  captureFullViewport,
+} from "../utils/screenshot";
 
-import type { Annotation, ToolbarSettings, DemoAnnotation } from "../types";
+import type { Annotation, ToolbarSettings, DemoAnnotation, Screenshot } from "../types";
 import { DEFAULT_TOOLBAR_SETTINGS } from "../types";
 import styles from "../styles/toolbar.module.scss";
 
@@ -230,6 +238,8 @@ export type ToolbarProps = {
   setAnnotations: React.Dispatch<React.SetStateAction<Annotation[]>>;
   settings: ToolbarSettings;
   setSettings: React.Dispatch<React.SetStateAction<ToolbarSettings>>;
+  screenshots: Screenshot[];
+  setScreenshots: React.Dispatch<React.SetStateAction<Screenshot[]>>;
   
   // Callbacks
   onSend: (message?: string) => void;  // Replaces copy-to-clipboard
@@ -253,6 +263,8 @@ export function Toolbar({
   setAnnotations,
   settings,
   setSettings,
+  screenshots,
+  setScreenshots,
   onSend,
   onClose,
   showChatOption = false,
@@ -304,6 +316,13 @@ export function Toolbar({
   // settings and setSettings come from props
   const [isDarkMode, setIsDarkMode] = useState(true);
   const [showEntranceAnimation, setShowEntranceAnimation] = useState(false);
+
+  // Screenshot mode state
+  const [screenshotMode, setScreenshotMode] = useState<"off" | "area" | "element">("off");
+  const [isCapturing, setIsCapturing] = useState(false);
+  const [screenshotDragActive, setScreenshotDragActive] = useState(false);  // For render only
+  const screenshotDragStartRef = useRef<{ x: number; y: number } | null>(null);
+  const screenshotRectRef = useRef<HTMLDivElement | null>(null);
 
   // Draggable toolbar state
   const [toolbarPosition, setToolbarPosition] = useState<{
@@ -1207,10 +1226,38 @@ export function Toolbar({
     return () => document.removeEventListener("mouseup", handleMouseUp);
   }, [isActive, isDragging]);
 
+  // Capture element screenshot (attached to annotation)
+  const captureElementScreenshot = useCallback(async (
+    boundingBox: { x: number; y: number; width: number; height: number }
+  ): Promise<Screenshot | undefined> => {
+    try {
+      return await captureElement(boundingBox);
+    } catch (err) {
+      console.error("[pi-annotate] Element capture failed:", err);
+      return undefined;
+    }
+  }, []);
+
   // Add annotation
   const addAnnotation = useCallback(
-    (comment: string) => {
+    async (comment: string, options?: { includeScreenshot?: boolean }) => {
       if (!pendingAnnotation) return;
+
+      // Capture element screenshot if requested and boundingBox exists
+      let screenshot: Screenshot | undefined;
+      if (options?.includeScreenshot && pendingAnnotation.boundingBox) {
+        // Convert document coordinates to viewport coordinates for screenshot
+        // (boundingBox.y includes scrollY for non-fixed elements, but screenshot is viewport-relative)
+        const viewportBox = {
+          x: pendingAnnotation.boundingBox.x,
+          y: pendingAnnotation.isFixed 
+            ? pendingAnnotation.boundingBox.y 
+            : pendingAnnotation.boundingBox.y - window.scrollY,
+          width: pendingAnnotation.boundingBox.width,
+          height: pendingAnnotation.boundingBox.height,
+        };
+        screenshot = await captureElementScreenshot(viewportBox);
+      }
 
       const newAnnotation: Annotation = {
         id: Date.now().toString(),
@@ -1230,6 +1277,7 @@ export function Toolbar({
         accessibility: pendingAnnotation.accessibility,
         computedStyles: pendingAnnotation.computedStyles,
         nearbyElements: pendingAnnotation.nearbyElements,
+        screenshot,
       };
 
       setAnnotations((prev) => [...prev, newAnnotation]);
@@ -1252,7 +1300,7 @@ export function Toolbar({
 
       window.getSelection()?.removeAllRanges();
     },
-    [pendingAnnotation],
+    [pendingAnnotation, captureElementScreenshot],
   );
 
   // Cancel annotation with exit animation
@@ -1375,6 +1423,141 @@ export function Toolbar({
   
   // Legacy alias for compatibility
   const copyOutput = handleSendToPi;
+
+  // ─────────────────────────────────────────────────────────────────────
+  // Screenshot functions
+  // ─────────────────────────────────────────────────────────────────────
+
+  // Capture full viewport screenshot
+  const handleCaptureViewport = useCallback(async () => {
+    if (isCapturing) return;
+    setIsCapturing(true);
+    try {
+      const screenshot = await captureFullViewport();
+      setScreenshots(prev => [...prev, screenshot]);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch (err) {
+      console.error("[pi-annotate] Viewport capture failed:", err);
+    } finally {
+      setIsCapturing(false);
+    }
+  }, [isCapturing, setScreenshots]);
+
+  // Toggle area screenshot mode
+  const toggleAreaScreenshotMode = useCallback(() => {
+    setScreenshotMode(prev => prev === "area" ? "off" : "area");
+  }, []);
+
+  // Capture area screenshot from drag selection
+  // Note: This hides the overlay BEFORE capturing to avoid including it in the screenshot
+  const handleCaptureArea = useCallback(async (rect: { x: number; y: number; width: number; height: number }) => {
+    if (isCapturing) return;
+    
+    // Hide overlay FIRST, before capturing
+    setScreenshotMode("off");
+    screenshotDragStartRef.current = null;
+    setScreenshotDragActive(false);
+    
+    // Wait for DOM to update (overlay to be removed)
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    
+    setIsCapturing(true);
+    try {
+      const screenshot = await captureArea(rect);
+      setScreenshots(prev => [...prev, screenshot]);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch (err) {
+      console.error("[pi-annotate] Area capture failed:", err);
+    } finally {
+      setIsCapturing(false);
+    }
+  }, [isCapturing, setScreenshots]);
+
+  // Handle area screenshot drag (uses refs to avoid stale closures)
+  useEffect(() => {
+    if (screenshotMode !== "area") return;
+
+    const handleMouseDown = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (target.closest("[data-feedback-toolbar]")) return;
+      if (target.closest("[data-annotation-marker]")) return;
+      
+      e.preventDefault();
+      screenshotDragStartRef.current = { x: e.clientX, y: e.clientY };
+      setScreenshotDragActive(true);
+      
+      // Initialize rectangle position
+      if (screenshotRectRef.current) {
+        screenshotRectRef.current.style.transform = `translate(${e.clientX}px, ${e.clientY}px)`;
+        screenshotRectRef.current.style.width = "0px";
+        screenshotRectRef.current.style.height = "0px";
+      }
+    };
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const start = screenshotDragStartRef.current;
+      if (!start) return;
+      
+      // Update visual rectangle directly for performance
+      if (screenshotRectRef.current) {
+        const left = Math.min(start.x, e.clientX);
+        const top = Math.min(start.y, e.clientY);
+        const width = Math.abs(e.clientX - start.x);
+        const height = Math.abs(e.clientY - start.y);
+        screenshotRectRef.current.style.transform = `translate(${left}px, ${top}px)`;
+        screenshotRectRef.current.style.width = `${width}px`;
+        screenshotRectRef.current.style.height = `${height}px`;
+      }
+    };
+
+    const handleMouseUp = async (e: MouseEvent) => {
+      const start = screenshotDragStartRef.current;
+      if (!start) return;
+      
+      const left = Math.min(start.x, e.clientX);
+      const top = Math.min(start.y, e.clientY);
+      const width = Math.abs(e.clientX - start.x);
+      const height = Math.abs(e.clientY - start.y);
+      
+      // Only capture if area is meaningful size
+      if (width > 20 && height > 20) {
+        // handleCaptureArea will hide overlay before capturing
+        await handleCaptureArea({ x: left, y: top, width, height });
+      } else {
+        // Too small - just cancel
+        screenshotDragStartRef.current = null;
+        setScreenshotDragActive(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleMouseDown);
+    document.addEventListener("mousemove", handleMouseMove);
+    document.addEventListener("mouseup", handleMouseUp);
+
+    return () => {
+      document.removeEventListener("mousedown", handleMouseDown);
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, [screenshotMode, handleCaptureArea]);
+
+  // Clear screenshot mode on escape
+  useEffect(() => {
+    if (screenshotMode === "off") return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setScreenshotMode("off");
+        screenshotDragStartRef.current = null;
+        setScreenshotDragActive(false);
+      }
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [screenshotMode]);
 
   // Toolbar dragging - mousemove and mouseup
   useEffect(() => {
@@ -1744,6 +1927,46 @@ export function Toolbar({
             >
               <IconGear size={24} />
             </button>
+
+            <div
+              className={`${styles.divider} ${!isDarkMode ? styles.light : ""}`}
+            />
+
+            {/* Screenshot buttons */}
+            <button
+              className={`${styles.controlButton} ${!isDarkMode ? styles.light : ""}`}
+              onClick={(e) => {
+                e.stopPropagation();
+                handleCaptureViewport();
+              }}
+              disabled={isCapturing}
+              title="Capture viewport"
+            >
+              <IconViewport size={24} />
+            </button>
+
+            <button
+              className={`${styles.controlButton} ${!isDarkMode ? styles.light : ""}`}
+              onClick={(e) => {
+                e.stopPropagation();
+                toggleAreaScreenshotMode();
+              }}
+              disabled={isCapturing}
+              title={screenshotMode === "area" ? "Cancel area capture" : "Capture area"}
+              data-active={screenshotMode === "area"}
+            >
+              <IconCrop size={24} />
+            </button>
+
+            {screenshots.length > 0 && (
+              <span
+                className={`${styles.screenshotBadge} ${!isDarkMode ? styles.light : ""}`}
+                title={`${screenshots.length} screenshot${screenshots.length !== 1 ? "s" : ""}`}
+              >
+                <IconCamera size={16} />
+                <span>{screenshots.length}</span>
+              </span>
+            )}
 
             <div
               className={`${styles.divider} ${!isDarkMode ? styles.light : ""}`}
@@ -2298,6 +2521,7 @@ export function Toolbar({
                     ? "#34C759"
                     : settings.annotationColor
                 }
+                showScreenshotOption={!!pendingAnnotation.boundingBox}
                 style={{
                   // Popup is 280px wide, centered with translateX(-50%), so 140px each side
                   // Clamp so popup stays 20px from viewport edges
@@ -2390,6 +2614,23 @@ export function Toolbar({
                 ref={highlightsContainerRef}
                 className={styles.highlightsContainer}
               />
+            </>
+          )}
+
+          {/* Screenshot area selection overlay */}
+          {screenshotMode === "area" && (
+            <>
+              <div className={styles.screenshotOverlay} />
+              {screenshotDragActive && (
+                <div
+                  ref={screenshotRectRef}
+                  className={styles.screenshotSelection}
+                />
+              )}
+              <div className={styles.screenshotHint}>
+                <IconCrop size={20} />
+                <span>Drag to select area • ESC to cancel</span>
+              </div>
             </>
           )}
         </div>

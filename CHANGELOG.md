@@ -14,11 +14,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Run `/annotate <url>` to navigate and open toolbar
   - Fire-and-forget: opens toolbar immediately, annotations sent via `USER_MESSAGE`
 
+- **Screenshot capture** (3 modes)
+  - **Viewport capture**: Click viewport icon to capture entire visible page
+  - **Area capture**: Click crop icon, then drag to select a region
+  - **Element capture**: Check "Include screenshot" in annotation popup to capture the element
+  - All screenshots included as base64 PNG in tool results
+  - Visual feedback with screenshot badge showing count
+
+### Fixed
+
+- Element screenshots now correctly use viewport coordinates for cropping (was incorrectly using document coordinates which caused misaligned captures on scrolled pages)
+- Standalone screenshots (viewport/area) now included in `USER_MESSAGE` for command flow (previously only sent via `ANNOTATIONS_COMPLETE` in tool flow)
+
 ### Changed
 
 - **Browser-first workflow**: Connection now established via `/annotate` command, then toolbar can be toggled anytime with extension icon or `Cmd+Shift+A`
 - Made `id` optional in `START_ANNOTATION` message to differentiate command vs tool flow
 - Updated README with new usage instructions and method table
+- Added `Screenshot` type and `screenshots` field to `AnnotationResult`
+- Added `screenshots` field to `USER_MESSAGE` socket message type
 
 ## [0.1.0] - 2026-01-22
 

@@ -1,12 +1,15 @@
-import type { Annotation, DetailLevel } from "./types.js";
+import type { Annotation, DetailLevel, Screenshot } from "./types.js";
 
 export function generateOutput(
   annotations: Annotation[],
   pathname: string,
   detailLevel: DetailLevel = "standard",
-  viewport?: { width: number; height: number }
+  viewport?: { width: number; height: number },
+  screenshots?: Screenshot[]
 ): string {
-  if (annotations.length === 0) return "No annotations provided.";
+  if (annotations.length === 0 && (!screenshots || screenshots.length === 0)) {
+    return "No annotations or screenshots provided.";
+  }
 
   const viewportStr = viewport 
     ? `${viewport.width}×${viewport.height}`
@@ -60,6 +63,24 @@ export function generateOutput(
       output += "\n";
     }
   });
+
+  // Add screenshot summary
+  if (screenshots && screenshots.length > 0) {
+    output += `---\n\n## Screenshots (${screenshots.length})\n\n`;
+    screenshots.forEach((s, i) => {
+      output += `${i + 1}. **${s.type}** capture (${s.width}×${s.height}px)\n`;
+    });
+    output += `\n*Screenshot data attached as base64 images*\n`;
+  }
+
+  // Note attached element screenshots
+  const annotationsWithScreenshots = annotations.filter(a => a.screenshot);
+  if (annotationsWithScreenshots.length > 0) {
+    if (!screenshots || screenshots.length === 0) {
+      output += `---\n\n`;
+    }
+    output += `*${annotationsWithScreenshots.length} annotation(s) have attached element screenshots*\n`;
+  }
 
   return output;
 }

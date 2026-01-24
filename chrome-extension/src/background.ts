@@ -68,8 +68,30 @@ function connectNative() {
 }
 
 // Listen for messages from content script → forward relevant ones to native host
-chrome.runtime.onMessage.addListener((msg, _sender, _sendResponse) => {
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   console.log("[pi-annotate] From content:", msg);
+  
+  // Handle screenshot capture request
+  if (msg.type === "CAPTURE_SCREENSHOT") {
+    const windowId = sender.tab?.windowId;
+    if (windowId === undefined) {
+      sendResponse({ success: false, error: "No window ID available" });
+      return true;
+    }
+    chrome.tabs.captureVisibleTab(
+      windowId,
+      { format: "png" },
+      (dataUrl) => {
+        if (chrome.runtime.lastError) {
+          console.error("[pi-annotate] Screenshot error:", chrome.runtime.lastError);
+          sendResponse({ success: false, error: chrome.runtime.lastError.message });
+        } else {
+          sendResponse({ success: true, dataUrl });
+        }
+      }
+    );
+    return true; // Keep channel open for async response
+  }
   
   // Only forward pi-relevant messages, not internal Chrome messages
   const piMessages = ["ANNOTATIONS_COMPLETE", "USER_MESSAGE", "END_CHAT"];

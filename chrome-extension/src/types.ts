@@ -6,6 +6,7 @@ export type {
   ToolbarSettings,
   DemoAnnotation,
   SocketMessage,
+  Screenshot,
 } from "../../types.js";
 
 // Re-export the constant (not just the type)

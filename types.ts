@@ -1,4 +1,16 @@
 // ─────────────────────────────────────────────────────────────────────
+// Screenshot types
+// ─────────────────────────────────────────────────────────────────────
+
+export interface Screenshot {
+  dataUrl: string;           // base64 PNG data URL
+  width: number;             // Pixel width
+  height: number;            // Pixel height
+  type: "area" | "element" | "viewport";  // How it was captured
+  timestamp: number;         // When captured
+}
+
+// ─────────────────────────────────────────────────────────────────────
 // Annotation types (from agentation)
 // ─────────────────────────────────────────────────────────────────────
 
@@ -31,6 +43,9 @@ export interface Annotation {
   // Metadata
   isFixed?: boolean;         // True if element has fixed/sticky positioning
   isMultiSelect?: boolean;   // True if created via drag selection
+  
+  // Screenshot (optional)
+  screenshot?: Screenshot;   // Visual capture of element/area
 }
 
 export type DetailLevel = "compact" | "standard" | "detailed" | "forensic";
@@ -64,6 +79,7 @@ export interface AnnotationResult {
   annotations: Annotation[];
   detailLevel: DetailLevel;
   error?: string;
+  screenshots?: Screenshot[];  // Standalone viewport/area screenshots (not attached to annotations)
 }
 
 export interface AnnotationToolDetails {
@@ -71,6 +87,7 @@ export interface AnnotationToolDetails {
   url?: string;
   viewport?: { width: number; height: number };
   detailLevel?: DetailLevel;
+  screenshots?: Screenshot[];
   error?: string;
 }
 
@@ -85,7 +102,7 @@ export type SocketMessage =
   | { type: "ERROR"; message: string }
   // Chrome → Pi  
   | { type: "ANNOTATIONS_COMPLETE"; requestId: number; result: AnnotationResult }
-  | { type: "USER_MESSAGE"; content: string; url?: string; annotations?: Annotation[] }
+  | { type: "USER_MESSAGE"; content: string; url?: string; annotations?: Annotation[]; screenshots?: Screenshot[] }
   | { type: "END_CHAT" }
   // Chrome internal (not sent to Pi)
   | { type: "TOGGLE_TOOLBAR" };

@@ -4,7 +4,7 @@ import { Text } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
 import * as net from "node:net";
 import { generateOutput } from "./generate-output.js";
-import type { Annotation, AnnotationResult, AnnotationToolDetails, SocketMessage } from "./types.js";
+import type { Annotation, AnnotationResult, AnnotationToolDetails, Screenshot, SocketMessage } from "./types.js";
 
 const SOCKET_PATH = "/tmp/pi-annotate.sock";
 
@@ -99,7 +99,7 @@ export default function (pi: ExtensionAPI) {
         
       case "USER_MESSAGE":
         // Browser-initiated chat message
-        handleUserMessage(msg.content, msg.url, msg.annotations);
+        handleUserMessage(msg.content, msg.url, msg.annotations, msg.screenshots);
         break;
         
       case "END_CHAT":
@@ -109,14 +109,16 @@ export default function (pi: ExtensionAPI) {
     }
   }
   
-  function handleUserMessage(content: string, url?: string, annotations?: Annotation[]) {
-    // Format message with browser prefix and optional annotations
+  function handleUserMessage(content: string, url?: string, annotations?: Annotation[], screenshots?: Screenshot[]) {
+    // Format message with browser prefix and optional annotations/screenshots
     let message = "[via browser]\n";
-    if (annotations && annotations.length > 0) {
+    if ((annotations && annotations.length > 0) || (screenshots && screenshots.length > 0)) {
       const annotationMarkdown = generateOutput(
-        annotations, 
+        annotations || [], 
         url || "[browser]", 
-        "standard"
+        "standard",
+        undefined,
+        screenshots
       );
       message += annotationMarkdown + "\n\n";
     }
@@ -221,12 +223,13 @@ export default function (pi: ExtensionAPI) {
         return {
           content: [{ 
             type: "text", 
-            text: generateOutput(result.annotations, result.url, result.detailLevel, result.viewport)
+            text: generateOutput(result.annotations, result.url, result.detailLevel, result.viewport, result.screenshots)
           }],
           details: {
             annotations: result.annotations,
             url: result.url,
             viewport: result.viewport,
+            screenshots: result.screenshots,
             detailLevel: result.detailLevel,
           } satisfies AnnotationToolDetails,
         };

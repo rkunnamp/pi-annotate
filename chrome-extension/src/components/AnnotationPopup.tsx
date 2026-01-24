@@ -18,8 +18,8 @@ export interface AnnotationPopupCSSProps {
   initialValue?: string;
   /** Label for submit button (default: "Add") */
   submitLabel?: string;
-  /** Called when annotation is submitted with text */
-  onSubmit: (text: string) => void;
+  /** Called when annotation is submitted with text and options */
+  onSubmit: (text: string, options?: { includeScreenshot?: boolean }) => void;
   /** Called when popup is cancelled/dismissed */
   onCancel: () => void;
   /** Position styles (left, top) */
@@ -30,6 +30,8 @@ export interface AnnotationPopupCSSProps {
   isExiting?: boolean;
   /** Light mode styling */
   lightMode?: boolean;
+  /** Show screenshot checkbox option */
+  showScreenshotOption?: boolean;
 }
 
 export interface AnnotationPopupCSSHandle {
@@ -66,10 +68,12 @@ export const AnnotationPopupCSS = forwardRef<AnnotationPopupCSSHandle, Annotatio
       accentColor = "#3c82f7",
       isExiting = false,
       lightMode = false,
+      showScreenshotOption = false,
     },
     ref
   ) {
     const [text, setText] = useState(initialValue);
+    const [includeScreenshot, setIncludeScreenshot] = useState(false);
     const [isShaking, setIsShaking] = useState(false);
     const [animState, setAnimState] = useState<"initial" | "enter" | "entered" | "exit">("initial");
     const [isFocused, setIsFocused] = useState(false);
@@ -132,8 +136,8 @@ export const AnnotationPopupCSS = forwardRef<AnnotationPopupCSSHandle, Annotatio
     // Handle submit
     const handleSubmit = useCallback(() => {
       if (!text.trim()) return;
-      onSubmit(text.trim());
-    }, [text, onSubmit]);
+      onSubmit(text.trim(), { includeScreenshot });
+    }, [text, includeScreenshot, onSubmit]);
 
     // Handle keyboard
     const handleKeyDown = useCallback(
@@ -190,6 +194,17 @@ export const AnnotationPopupCSS = forwardRef<AnnotationPopupCSSHandle, Annotatio
           rows={2}
           onKeyDown={handleKeyDown}
         />
+
+        {showScreenshotOption && (
+          <label className={styles.screenshotOption}>
+            <input
+              type="checkbox"
+              checked={includeScreenshot}
+              onChange={(e) => setIncludeScreenshot(e.target.checked)}
+            />
+            <span>Include screenshot</span>
+          </label>
+        )}
 
         <div className={styles.actions}>
           <button className={styles.cancel} onClick={handleCancel}>

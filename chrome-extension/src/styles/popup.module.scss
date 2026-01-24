@@ -272,3 +272,44 @@ $green: #34C759;
     }
   }
 }
+
+// Screenshot option checkbox
+.screenshotOption {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.05);
+  cursor: pointer;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.7);
+  transition: background-color 0.15s ease;
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.08);
+  }
+
+  input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+    margin: 0;
+    accent-color: #4a90e2;
+    cursor: pointer;
+  }
+
+  span {
+    user-select: none;
+  }
+}
+
+// Light mode
+.light .screenshotOption {
+  background: rgba(0, 0, 0, 0.04);
+  color: rgba(0, 0, 0, 0.6);
+
+  &:hover {
+    background: rgba(0, 0, 0, 0.06);
+  }
+}

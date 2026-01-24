@@ -1,13 +1,14 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { Toolbar } from "./Toolbar";
 import { ChatPanel, ChatMessage } from "./ChatPanel";
-import type { Annotation, ToolbarSettings, SocketMessage, AnnotationResult } from "../types";
+import type { Annotation, ToolbarSettings, SocketMessage, AnnotationResult, Screenshot } from "../types";
 import { DEFAULT_TOOLBAR_SETTINGS } from "../types";
 
 export function App() {
   const [isActive, setIsActive] = useState(false);
   const [showChat, setShowChat] = useState(false);
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
+  const [screenshots, setScreenshots] = useState<Screenshot[]>([]);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [pendingRequestId, setPendingRequestId] = useState<number | null>(null);
   const [settings, setSettings] = useState<ToolbarSettings>(DEFAULT_TOOLBAR_SETTINGS);
@@ -42,6 +43,7 @@ export function App() {
           // id absent = command invocation (will send USER_MESSAGE)
           setPendingRequestId(msg.id ?? null);
           setAnnotations([]);  // Clear previous annotations for fresh session
+          setScreenshots([]);  // Clear previous screenshots
           setIsActive(true);
           setShowChat(false);
           setChatMessages([]);
@@ -72,6 +74,7 @@ export function App() {
       viewport: { width: window.innerWidth, height: window.innerHeight },
       annotations,
       detailLevel: settings.outputDetail,
+      screenshots: screenshots.length > 0 ? screenshots : undefined,
     };
     
     if (pendingRequestId !== null) {
@@ -98,14 +101,20 @@ export function App() {
           url: window.location.href,
           // annotations omitted - already sent in tool result
         });
-        // Clear annotations after chat starts (they're already sent)
-        if (settings.autoClearAfterCopy) setAnnotations([]);
+        // Clear annotations/screenshots after chat starts (they're already sent)
+        if (settings.autoClearAfterCopy) {
+          setAnnotations([]);
+          setScreenshots([]);
+        }
       } else {
         // Just send annotations, close
-        if (settings.autoClearAfterCopy) setAnnotations([]);
+        if (settings.autoClearAfterCopy) {
+          setAnnotations([]);
+          setScreenshots([]);
+        }
         setIsActive(false);
       }
-    } else if (message || annotations.length > 0) {
+    } else if (message || annotations.length > 0 || screenshots.length > 0) {
       // User-initiated: send annotations with optional message
       const content = message || "";
       if (message) {
@@ -124,10 +133,14 @@ export function App() {
         content,
         url: window.location.href,
         annotations: annotations.length > 0 ? annotations : undefined,
+        screenshots: screenshots.length > 0 ? screenshots : undefined,
       });
-      if (settings.autoClearAfterCopy) setAnnotations([]);
+      if (settings.autoClearAfterCopy) {
+        setAnnotations([]);
+        setScreenshots([]);
+      }
     }
-  }, [annotations, settings, pendingRequestId]);
+  }, [annotations, screenshots, settings, pendingRequestId]);
 
   // Handle chat close
   const handleCloseChat = useCallback(() => {
@@ -169,6 +182,8 @@ export function App() {
         setAnnotations={setAnnotations}
         settings={settings}
         setSettings={setSettings}
+        screenshots={screenshots}
+        setScreenshots={setScreenshots}
         onSend={handleSend}
         onClose={handleClose}
         showChatOption={true}
