@@ -2,6 +2,7 @@
   "name": "pi-annotate",
   "version": "0.1.0",
   "type": "module",
+  "keywords": ["pi-package"],
   "scripts": {
     "setup": "cd chrome-extension && npm install --legacy-peer-deps && npm run build",
     "build": "cd chrome-extension && npm run build",
