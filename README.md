@@ -15,13 +15,13 @@
 # Submit → Pi receives focused screenshots
 ```
 
-A simplified, ground-up rewrite focused on reliability and per-element screenshots. DevTools-like element picker in vanilla JS (~800 lines).
+A simplified, ground-up rewrite focused on reliability and per-element screenshots. DevTools-like element picker in vanilla JS.
 
 ## Highlights
 
 - **Per-element screenshots** — Each selected element gets its own cropped image
 - **📷 toggle per element** — Choose which elements to screenshot
-- **Vanilla JS** — No build step, ~800 lines
+- **Vanilla JS** — No build step, no framework
 - **Parent/Child navigation** — Scroll wheel or buttons to traverse DOM
 - **Full page option** — Toggle for entire viewport capture
 
@@ -64,7 +64,6 @@ Restart Pi to load the extension.
 ```bash
 /annotate                  # Annotate current Chrome tab
 /annotate https://x.com    # Navigate to URL first
-/ann                       # Short alias
 ```
 
 | Action | How |
@@ -156,6 +155,12 @@ Restart Pi to load the extension.
 | `chrome-extension/background.js` | Native messaging + screenshots |
 | `chrome-extension/native/host.cjs` | Socket ↔ native messaging bridge |
 
+### Security
+
+- **Auth token** — Native host generates a per-run token at `/tmp/pi-annotate.token`
+- **Socket permissions** — Socket and token files created with 0600 permissions
+- **Message validation** — Schema checks drop malformed messages
+
 ### Message Flow
 
 **Starting annotation:**
@@ -178,7 +183,7 @@ pi-annotate/
 └── chrome-extension/
     ├── manifest.json     # MV3 manifest
     ├── background.js     # Service worker
-    ├── content.js        # Element picker (~800 lines)
+    ├── content.js        # Element picker UI
     └── native/
         ├── host.cjs      # Native messaging host
         ├── host-wrapper.sh

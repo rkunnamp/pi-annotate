@@ -21,29 +21,31 @@ export default function (pi: ExtensionAPI) {
   // /annotate Command
   // ─────────────────────────────────────────────────────────────────────
   
+  const annotateHandler = async (args: string, ctx: any) => {
+    const url = args.trim() || undefined;
+    
+    try {
+      await connectToHost();
+    } catch (err) {
+      ctx.ui?.notify("Chrome extension not connected. Make sure Pi Annotate is installed.", "error");
+      return;
+    }
+    
+    // Send start message (no URL = use current tab)
+    const requestId = Date.now();
+    sendToHost({
+      type: "START_ANNOTATION",
+      id: requestId,
+      requestId,
+      url,
+    });
+    
+    ctx.ui?.notify(url ? `Opening annotation mode on ${url}` : "Annotation mode started on current tab", "info");
+  };
+
   pi.registerCommand("annotate", {
     description: "Start visual annotation mode in Chrome. Optionally provide a URL.",
-    handler: async (args, ctx) => {
-      const url = args.trim() || undefined;
-      
-      try {
-        await connectToHost();
-      } catch (err) {
-        ctx.ui?.notify("Chrome extension not connected. Make sure Pi Annotate is installed.", "error");
-        return;
-      }
-      
-      // Send start message (no URL = use current tab)
-      const requestId = Date.now();
-      sendToHost({
-        type: "START_ANNOTATION",
-        id: requestId,
-        requestId,
-        url,
-      });
-      
-      ctx.ui?.notify(url ? `Opening annotation mode on ${url}` : "Annotation mode started on current tab", "info");
-    },
+    handler: annotateHandler,
   });
   
   // ─────────────────────────────────────────────────────────────────────
