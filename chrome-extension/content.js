@@ -25,6 +25,17 @@
   const Z_INDEX_PANEL = 2147483646;
   const Z_INDEX_TOOLTIP = 2147483647;
   
+  // HTML escape to prevent XSS when inserting user-controlled content
+  function escapeHtml(str) {
+    if (!str) return "";
+    return str
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#039;");
+  }
+  
   // ─────────────────────────────────────────────────────────────────────
   // State
   // ─────────────────────────────────────────────────────────────────────
@@ -433,7 +444,7 @@
     styleEl = document.createElement("style");
     styleEl.id = "pi-styles";
     styleEl.textContent = STYLES;
-    document.head.appendChild(styleEl);
+    (document.head || document.documentElement).appendChild(styleEl);
     
     // Create UI
     createHighlight();
@@ -457,7 +468,7 @@
     
     document.removeEventListener("mousemove", onMouseMove, true);
     document.removeEventListener("click", onClick, true);
-    document.removeEventListener("wheel", onWheel, true);
+    document.removeEventListener("wheel", onWheel, { capture: true });
     document.removeEventListener("keydown", onKeyDown, true);
     
     document.body.style.cursor = "";
@@ -706,6 +717,13 @@
     if (idx >= 0) {
       // Already selected - deselect it
       selectedElements.splice(idx, 1);
+      // Shift screenshot states for indices after removed element
+      const newMap = new Map();
+      elementScreenshots.forEach((v, k) => {
+        if (k < idx) newMap.set(k, v);
+        else if (k > idx) newMap.set(k - 1, v);
+      });
+      elementScreenshots = newMap;
     } else {
       // Not selected - add it
       const addToExisting = multiSelectMode || e.shiftKey;
@@ -803,9 +821,9 @@
     const id = el.id;
     const classes = Array.from(el.classList).slice(0, 3);
     
-    let html = `<span class="tag">${tag}</span>`;
-    if (id) html += `<span class="id">#${id}</span>`;
-    if (classes.length) html += `<span class="class">.${classes.join(".")}</span>`;
+    let html = `<span class="tag">${escapeHtml(tag)}</span>`;
+    if (id) html += `<span class="id">#${escapeHtml(id)}</span>`;
+    if (classes.length) html += `<span class="class">.${escapeHtml(classes.join("."))}</span>`;
     html += `<span class="size">${Math.round(rect.width)}×${Math.round(rect.height)}</span>`;
     if (elementStack.length > 1) {
       html += `<span class="hint">▲▼ ${stackIndex + 1}/${elementStack.length}</span>`;
@@ -842,9 +860,9 @@
     const id = el.id;
     const classes = Array.from(el.classList).slice(0, 2);
     
-    let html = `<span class="tag">${tag}</span>`;
-    if (id) html += `<span class="id">#${id}</span>`;
-    if (classes.length) html += `<span class="class">.${classes.join(".")}</span>`;
+    let html = `<span class="tag">${escapeHtml(tag)}</span>`;
+    if (id) html += `<span class="id">#${escapeHtml(id)}</span>`;
+    if (classes.length) html += `<span class="class">.${escapeHtml(classes.join("."))}</span>`;
     
     infoEl.innerHTML = html;
     
@@ -864,6 +882,11 @@
     markersContainer.innerHTML = "";
     
     selectedElements.forEach((sel, i) => {
+      // Check if element is still in the DOM
+      if (!sel.element || !document.contains(sel.element)) {
+        return;
+      }
+      
       const rect = sel.element.getBoundingClientRect();
       const marker = document.createElement("div");
       marker.className = "pi-marker";
@@ -894,7 +917,7 @@
         <div class="pi-chip">
           <span class="pi-chip-num">${i + 1}</span>
           <button class="pi-chip-btn screenshot ${hasScreenshot ? 'active' : ''}" data-i="${i}" title="Toggle screenshot for this element">📷</button>
-          <span class="pi-chip-text" title="${sel.selector}">${label}</span>
+          <span class="pi-chip-text" title="${escapeHtml(sel.selector)}">${escapeHtml(label)}</span>
           <span class="pi-chip-btns">
             <button class="pi-chip-btn expand" data-i="${i}" title="Expand to parent">+</button>
             <button class="pi-chip-btn contract" data-i="${i}" title="Contract to child">−</button>
@@ -1069,8 +1092,10 @@
             // Individual crops for elements with screenshot enabled
             for (let i = 0; i < selectedElements.length; i++) {
               const hasScreenshot = elementScreenshots.get(i) !== false; // Default true
-              if (hasScreenshot && selectedElements[i].element) {
-                const cropped = await cropToElement(fullScreenshot, selectedElements[i].element);
+              const element = selectedElements[i].element;
+              // Verify element exists and is still in the DOM
+              if (hasScreenshot && element && document.contains(element)) {
+                const cropped = await cropToElement(fullScreenshot, element);
                 screenshots.push({ index: i + 1, dataUrl: cropped });
               }
             }

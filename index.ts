@@ -4,7 +4,7 @@ import * as net from "node:net";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
-import type { AnnotationResult, ElementSelection, Viewport } from "./types.js";
+import type { AnnotationResult, ElementSelection } from "./types.js";
 
 const SOCKET_PATH = "/tmp/pi-annotate.sock";
 
@@ -138,8 +138,10 @@ export default function (pi: ExtensionAPI) {
         : `Annotation failed: ${result.reason || "Unknown error"}`;
     }
     
-    let output = `## Page Annotation: ${result.url}\n`;
-    output += `**Viewport:** ${result.viewport.width}×${result.viewport.height}\n\n`;
+    let output = `## Page Annotation: ${result.url || "Unknown"}\n`;
+    if (result.viewport) {
+      output += `**Viewport:** ${result.viewport.width}×${result.viewport.height}\n\n`;
+    }
     
     if (result.prompt) {
       output += `**User's request:** ${result.prompt}\n\n`;
@@ -278,7 +280,7 @@ export default function (pi: ExtensionAPI) {
         sendToHost({
           type: "START_ANNOTATION",
           id: Date.now(),
-          url: url || undefined,
+          url,
         });
         
         if (ctx.hasUI) {

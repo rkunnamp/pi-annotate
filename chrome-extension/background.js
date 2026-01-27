@@ -50,9 +50,16 @@ function connectNative() {
         if (msg.url && currentUrl !== msg.url) {
           console.log("[pi-annotate] Navigating to:", msg.url);
           chrome.tabs.update(tabId, { url: msg.url }, (tab) => {
-            // Wait for page load
+            if (chrome.runtime.lastError) {
+              console.error("[pi-annotate] Failed to navigate:", chrome.runtime.lastError.message);
+              return;
+            }
+            
+            // Wait for page load with timeout
+            let timeoutId = null;
             const listener = (updatedTabId, info) => {
               if (updatedTabId === tab.id && info.status === "complete") {
+                if (timeoutId) clearTimeout(timeoutId);
                 chrome.tabs.onUpdated.removeListener(listener);
                 setTimeout(() => {
                   sendToContentScript(tab.id, msg);
@@ -60,6 +67,12 @@ function connectNative() {
               }
             };
             chrome.tabs.onUpdated.addListener(listener);
+            
+            // Cleanup listener after 30s timeout
+            timeoutId = setTimeout(() => {
+              chrome.tabs.onUpdated.removeListener(listener);
+              console.log("[pi-annotate] Navigation timeout - listener removed");
+            }, 30000);
           });
         } else {
           // No URL or same URL - just activate on current tab

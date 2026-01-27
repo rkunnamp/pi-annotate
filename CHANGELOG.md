@@ -2,6 +2,17 @@
 
 All notable changes to Pi Annotate.
 
+## [0.1.1] - 2026-01-27
+
+### Fixed
+- **XSS vulnerability** — Escape HTML when rendering element IDs/classes in tooltips and chips
+- **Screenshot map index shift on click-deselect** — Clicking to deselect now properly shifts screenshot toggle states
+- **DOM validity check** — Verify elements still exist in DOM before cropping screenshots
+- **Null viewport access** — Guard against undefined viewport in result formatting
+- **Event listener cleanup** — Match wheel event removal options with addition options
+- **Navigation listener leak** — Add 30s timeout to prevent orphaned listeners
+- **Style injection fallback** — Use `document.documentElement` if `document.head` is unavailable
+
 ## [0.1.0] - 2026-01-27 (Complete Rewrite)
 
 ### Added
