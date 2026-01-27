@@ -2,6 +2,31 @@
 
 All notable changes to Pi Annotate.
 
+## [0.1.2] - 2026-01-27
+
+### Security
+- **Auth token** — Native host generates per-run token at `/tmp/pi-annotate.token`; Pi must authenticate before messages are forwarded
+- **Socket permissions** — Socket file created with 0600 permissions, token file with 0600
+- **Message validation** — Schema guardrails in index.ts drop malformed messages
+
+### Added
+- **Request correlation** — End-to-end requestId tracking for proper multi-request handling
+- **Buffer limits** — Max 8MB for socket/native messaging buffers, 15MB for screenshots
+- **Log redaction** — Screenshots/dataUrls redacted from native host logs
+- **Log rotation** — Host log rotates at 5MB
+- **Stale selection pruning** — Auto-removes elements deleted from DOM before submit
+
+### Fixed
+- **Connection lost handling** — Pending tool calls resolve with `connection_lost` on socket close
+- **Navigation timeout** — Now sends CANCEL with `navigation_timeout` reason to Pi
+- **Canvas context guard** — Falls back to full screenshot if 2D context unavailable
+- **escapeHtml robustness** — Handles null/undefined/non-string inputs safely
+
+### Changed
+- **Pending requests** — Changed from single `pendingResolve` to Map keyed by requestId
+- **Async file writes** — Screenshots written asynchronously with `fs.promises.writeFile`
+- **Tab routing** — Background script routes messages to correct tab via requestId mapping
+
 ## [0.1.1] - 2026-01-27
 
 ### Fixed

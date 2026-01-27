@@ -7,11 +7,15 @@ import * as os from "node:os";
 import type { AnnotationResult, ElementSelection } from "./types.js";
 
 const SOCKET_PATH = "/tmp/pi-annotate.sock";
+const TOKEN_PATH = "/tmp/pi-annotate.token";
+const MAX_SOCKET_BUFFER = 8 * 1024 * 1024; // 8MB
+const MAX_SCREENSHOT_BYTES = 15 * 1024 * 1024; // 15MB
 
 export default function (pi: ExtensionAPI) {
   let browserSocket: net.Socket | null = null;
-  let pendingResolve: ((result: AnnotationResult) => void) | null = null;
+  let pendingRequests = new Map<number, (result: AnnotationResult) => void | Promise<void>>();
   let dataBuffer = ""; // Buffer for incomplete JSON messages
+  let authToken: string | null = null;
   
   // ─────────────────────────────────────────────────────────────────────
   // /annotate Command
@@ -30,9 +34,11 @@ export default function (pi: ExtensionAPI) {
       }
       
       // Send start message (no URL = use current tab)
+      const requestId = Date.now();
       sendToHost({
         type: "START_ANNOTATION",
-        id: Date.now(),
+        id: requestId,
+        requestId,
         url,
       });
       
@@ -50,17 +56,33 @@ export default function (pi: ExtensionAPI) {
         resolve();
         return;
       }
-      
+
+      if (!authToken) {
+        try {
+          authToken = fs.readFileSync(TOKEN_PATH, "utf8").trim();
+        } catch (err) {
+          reject(new Error("Missing auth token; is the native host running?"));
+          return;
+        }
+      }
+
       browserSocket = net.createConnection(SOCKET_PATH);
       
       browserSocket.on("connect", () => {
         console.log("[pi-annotate] Connected to native host");
+        sendToHost({ type: "AUTH", token: authToken });
         resolve();
       });
       
       browserSocket.on("data", (data) => {
         // Buffer incoming data and split by newlines
         dataBuffer += data.toString();
+        if (dataBuffer.length > MAX_SOCKET_BUFFER) {
+          console.error("[pi-annotate] Socket buffer overflow, closing connection");
+          browserSocket?.destroy();
+          dataBuffer = "";
+          return;
+        }
         const lines = dataBuffer.split("\n");
         
         // Keep the last incomplete line in the buffer
@@ -70,7 +92,7 @@ export default function (pi: ExtensionAPI) {
           if (!line.trim()) continue;
           try {
             const msg = JSON.parse(line);
-            handleMessage(msg);
+            void handleMessage(msg);
           } catch (e) {
             console.error("[pi-annotate] Parse error:", e, "Line length:", line.length);
           }
@@ -86,6 +108,17 @@ export default function (pi: ExtensionAPI) {
         console.log("[pi-annotate] Socket closed");
         browserSocket = null;
         dataBuffer = ""; // Clear buffer on disconnect
+        for (const [, resolvePending] of pendingRequests) {
+          resolvePending({
+            success: false,
+            cancelled: true,
+            reason: "connection_lost",
+            elements: [],
+            url: "",
+            viewport: { width: 0, height: 0 },
+          });
+        }
+        pendingRequests.clear();
       });
     });
   }
@@ -96,24 +129,42 @@ export default function (pi: ExtensionAPI) {
     }
   }
   
-  function handleMessage(msg: any) {
+  function isRecord(value: unknown): value is Record<string, unknown> {
+    return !!value && typeof value === "object" && !Array.isArray(value);
+  }
+
+  function isAnnotationResult(value: unknown): value is AnnotationResult {
+    if (!isRecord(value)) return false;
+    if (typeof value.success !== "boolean") return false;
+    return true;
+  }
+
+  async function handleMessage(msg: any) {
     console.log("[pi-annotate] Received:", msg.type);
-    
+
+    if (!isRecord(msg) || typeof msg.type !== "string") return;
+
+    const requestId = typeof msg.requestId === "number" ? msg.requestId : null;
+
     if (msg.type === "ANNOTATIONS_COMPLETE") {
-      if (pendingResolve) {
+      if (!isAnnotationResult(msg.result)) return;
+      if (requestId && pendingRequests.has(requestId)) {
         // Tool flow - resolve the promise
-        pendingResolve(msg.result);
-        pendingResolve = null;
+        const resolvePending = pendingRequests.get(requestId) as (r: AnnotationResult) => void | Promise<void>;
+        pendingRequests.delete(requestId);
+        await resolvePending(msg.result);
       } else {
         // Command flow - inject as user message
         const result = msg.result as AnnotationResult;
-        const text = formatResult(result);
+        const text = await formatResult(result);
         console.log("[pi-annotate] Injecting annotation result as user message");
         pi.sendUserMessage(text);
       }
     } else if (msg.type === "CANCEL") {
-      if (pendingResolve) {
-        pendingResolve({
+      if (requestId && pendingRequests.has(requestId)) {
+        const resolvePending = pendingRequests.get(requestId) as (r: AnnotationResult) => void | Promise<void>;
+        pendingRequests.delete(requestId);
+        await resolvePending({
           success: false,
           cancelled: true,
           reason: msg.reason || "user",
@@ -121,7 +172,6 @@ export default function (pi: ExtensionAPI) {
           url: "",
           viewport: { width: 0, height: 0 },
         });
-        pendingResolve = null;
       }
       // For command flow, cancel is just ignored (UI already closed)
     }
@@ -131,7 +181,7 @@ export default function (pi: ExtensionAPI) {
   // Format Result
   // ─────────────────────────────────────────────────────────────────────
   
-  function formatResult(result: AnnotationResult): string {
+  async function formatResult(result: AnnotationResult): Promise<string> {
     if (!result.success) {
       return result.cancelled 
         ? "Annotation cancelled by user."
@@ -169,9 +219,12 @@ export default function (pi: ExtensionAPI) {
     if (result.screenshot) {
       // Full page screenshot
       try {
+        if (!result.screenshot.startsWith("data:image/")) throw new Error("Invalid screenshot data");
         const screenshotPath = path.join(os.tmpdir(), `pi-annotate-${timestamp}-full.png`);
         const base64Data = result.screenshot.replace(/^data:image\/\w+;base64,/, "");
-        fs.writeFileSync(screenshotPath, Buffer.from(base64Data, "base64"));
+        const buffer = Buffer.from(base64Data, "base64");
+        if (buffer.length > MAX_SCREENSHOT_BYTES) throw new Error("Screenshot too large");
+        await fs.promises.writeFile(screenshotPath, buffer);
         output += `**Screenshot (full page):** ${screenshotPath}\n`;
       } catch (err) {
         output += `*Screenshot capture failed: ${err}*\n`;
@@ -181,14 +234,19 @@ export default function (pi: ExtensionAPI) {
     if (result.screenshots && result.screenshots.length > 0) {
       // Individual element screenshots
       output += `### Screenshots\n\n`;
-      for (const shot of result.screenshots) {
+      for (let i = 0; i < result.screenshots.length; i++) {
+        const shot = result.screenshots[i];
         try {
-          const screenshotPath = path.join(os.tmpdir(), `pi-annotate-${timestamp}-el${shot.index}.png`);
+          if (!shot?.dataUrl?.startsWith("data:image/")) throw new Error("Invalid screenshot data");
+          const safeIndex = Number.isFinite(shot.index) ? Math.max(1, Math.floor(shot.index)) : i + 1;
+          const screenshotPath = path.join(os.tmpdir(), `pi-annotate-${timestamp}-el${safeIndex}.png`);
           const base64Data = shot.dataUrl.replace(/^data:image\/\w+;base64,/, "");
-          fs.writeFileSync(screenshotPath, Buffer.from(base64Data, "base64"));
-          output += `- Element ${shot.index}: ${screenshotPath}\n`;
+          const buffer = Buffer.from(base64Data, "base64");
+          if (buffer.length > MAX_SCREENSHOT_BYTES) throw new Error("Screenshot too large");
+          await fs.promises.writeFile(screenshotPath, buffer);
+          output += `- Element ${safeIndex}: ${screenshotPath}\n`;
         } catch (err) {
-          output += `- Element ${shot.index}: *capture failed*\n`;
+          output += `- Element ${shot?.index ?? i + 1}: *capture failed*\n`;
         }
       }
       output += "\n";
@@ -220,6 +278,7 @@ export default function (pi: ExtensionAPI) {
 
     async execute(_toolCallId, params, _onUpdate, ctx, signal) {
       const { url, timeout = 300 } = params as { url?: string; timeout?: number };
+      const requestId = Date.now();
 
       // Try to connect first
       try {
@@ -236,13 +295,13 @@ export default function (pi: ExtensionAPI) {
         
         const cleanup = () => {
           if (timeoutId) clearTimeout(timeoutId);
-          pendingResolve = null;
+          pendingRequests.delete(requestId);
           signal?.removeEventListener("abort", onAbort);
         };
 
         const onAbort = () => {
           cleanup();
-          sendToHost({ type: "CANCEL", reason: "aborted" });
+          sendToHost({ type: "CANCEL", requestId, reason: "aborted" });
           resolve({
             content: [{ type: "text", text: "Annotation was aborted." }],
             details: { aborted: true },
@@ -259,17 +318,18 @@ export default function (pi: ExtensionAPI) {
         signal?.addEventListener("abort", onAbort);
         
         // Set up response handler
-        pendingResolve = (result) => {
+        pendingRequests.set(requestId, async (result) => {
           cleanup();
           resolve({
-            content: [{ type: "text", text: formatResult(result) }],
+            content: [{ type: "text", text: await formatResult(result) }],
             details: result,
           });
-        };
+        });
         
         // Set timeout
         timeoutId = setTimeout(() => {
           cleanup();
+          sendToHost({ type: "CANCEL", requestId, reason: "timeout" });
           resolve({
             content: [{ type: "text", text: `Annotation timed out after ${timeout}s` }],
             details: { timeout: true },
@@ -279,7 +339,8 @@ export default function (pi: ExtensionAPI) {
         // Send start message
         sendToHost({
           type: "START_ANNOTATION",
-          id: Date.now(),
+          id: requestId,
+          requestId,
           url,
         });
         

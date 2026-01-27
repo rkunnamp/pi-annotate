@@ -3,9 +3,25 @@ const net = require("net");
 const fs = require("fs");
 
 const SOCKET_PATH = "/tmp/pi-annotate.sock";
+const TOKEN_PATH = "/tmp/pi-annotate.token";
 const LOG_FILE = "/tmp/pi-annotate-host.log";
+const MAX_NATIVE_MESSAGE_BYTES = 8 * 1024 * 1024; // 8MB
+const MAX_SOCKET_BUFFER = 8 * 1024 * 1024; // 8MB
+const MAX_LOG_BYTES = 5 * 1024 * 1024; // 5MB
+
+process.umask(0o077);
+
+function rotateLogIfNeeded() {
+  try {
+    const stats = fs.statSync(LOG_FILE);
+    if (stats.size > MAX_LOG_BYTES) {
+      fs.renameSync(LOG_FILE, `${LOG_FILE}.1`);
+    }
+  } catch {}
+}
 
 const log = (msg) => {
+  rotateLogIfNeeded();
   fs.appendFileSync(LOG_FILE, `${new Date().toISOString()} ${msg}\n`);
 };
 
@@ -16,6 +32,20 @@ try { fs.unlinkSync(SOCKET_PATH); } catch {}
 
 // Store connected pi client
 let piSocket = null;
+let piAuthed = false;
+
+function ensureToken() {
+  try {
+    const token = require("crypto").randomBytes(32).toString("hex");
+    fs.writeFileSync(TOKEN_PATH, token, { mode: 0o600 });
+    return token;
+  } catch (err) {
+    log(`Failed to create token: ${err.message}`);
+    return null;
+  }
+}
+
+const AUTH_TOKEN = ensureToken();
 
 // Native messaging I/O
 let inputBuffer = Buffer.alloc(0);
@@ -31,6 +61,11 @@ function writeMessage(msg) {
 function processInput() {
   while (inputBuffer.length >= 4) {
     const len = inputBuffer.readUInt32LE(0);
+    if (len > MAX_NATIVE_MESSAGE_BYTES) {
+      log(`Native message too large: ${len}`);
+      inputBuffer = Buffer.alloc(0);
+      return;
+    }
     if (inputBuffer.length < 4 + len) break;
     
     const json = inputBuffer.slice(4, 4 + len).toString();
@@ -45,9 +80,18 @@ function processInput() {
   }
 }
 
+function redactForLog(msg) {
+  return JSON.stringify(msg, (key, value) => {
+    if (key === "screenshot") return "[redacted]";
+    if (key === "screenshots") return Array.isArray(value) ? `[${value.length} screenshots]` : "[redacted]";
+    if (key === "dataUrl") return "[redacted]";
+    return value;
+  });
+}
+
 // Messages from Chrome extension → forward to Pi
 function handleExtensionMessage(msg) {
-  log(`From extension: ${JSON.stringify(msg)}`);
+  log(`From extension: ${redactForLog(msg)}`);
   
   if (piSocket && !piSocket.destroyed) {
     piSocket.write(JSON.stringify(msg) + "\n");
@@ -71,6 +115,7 @@ process.stdin.on("end", () => {
 
 function cleanup() {
   try { fs.unlinkSync(SOCKET_PATH); } catch {}
+  try { fs.unlinkSync(TOKEN_PATH); } catch {}
   process.exit(0);
 }
 
@@ -85,11 +130,18 @@ process.on("uncaughtException", (err) => {
 const server = net.createServer((socket) => {
   log("Pi client connected");
   piSocket = socket;
+  piAuthed = false;
   
   let buffer = "";
   
   socket.on("data", (data) => {
     buffer += data.toString();
+    if (buffer.length > MAX_SOCKET_BUFFER) {
+      log("Pi socket buffer overflow, closing connection");
+      socket.destroy();
+      buffer = "";
+      return;
+    }
     const lines = buffer.split("\n");
     buffer = lines.pop() || "";
     
@@ -97,9 +149,20 @@ const server = net.createServer((socket) => {
       if (!line.trim()) continue;
       try {
         const msg = JSON.parse(line);
-        // Forward to Chrome extension
-        log(`From Pi: ${JSON.stringify(msg)}`);
-        writeMessage(msg);
+        if (!piAuthed) {
+          if (msg?.type === "AUTH" && AUTH_TOKEN && msg.token === AUTH_TOKEN) {
+            piAuthed = true;
+            log("Pi client authenticated");
+          } else {
+            log("Pi client authentication failed");
+            socket.destroy();
+            return;
+          }
+        } else {
+          // Forward to Chrome extension
+          log(`From Pi: ${redactForLog(msg)}`);
+          writeMessage(msg);
+        }
       } catch (e) {
         log(`Pi parse error: ${e.message}`);
       }
@@ -116,4 +179,5 @@ const server = net.createServer((socket) => {
 
 server.listen(SOCKET_PATH, () => {
   log(`Listening on ${SOCKET_PATH}`);
+  try { fs.chmodSync(SOCKET_PATH, 0o600); } catch {}
 });

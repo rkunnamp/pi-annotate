@@ -6,6 +6,23 @@
  */
 
 let nativePort = null;
+const requestTabs = new Map();
+
+function getRequestId(msg) {
+  return typeof msg.requestId === "number" ? msg.requestId : (typeof msg.id === "number" ? msg.id : null);
+}
+
+function sendToNative(msg) {
+  if (!nativePort) {
+    console.error("[pi-annotate] Cannot send to native host - not connected");
+    return;
+  }
+  try {
+    nativePort.postMessage(msg);
+  } catch (err) {
+    console.error("[pi-annotate] Failed to send to native host:", err);
+  }
+}
 
 // Send message to content script, injecting it first if needed
 async function sendToContentScript(tabId, msg) {
@@ -42,7 +59,8 @@ function connectNative() {
         return;
       }
       
-      const tabId = tabs[0].id;
+      const requestId = getRequestId(msg);
+      const tabId = requestId && requestTabs.has(requestId) ? requestTabs.get(requestId) : tabs[0].id;
       const currentUrl = tabs[0].url;
       
       if (msg.type === "START_ANNOTATION") {
@@ -62,6 +80,7 @@ function connectNative() {
                 if (timeoutId) clearTimeout(timeoutId);
                 chrome.tabs.onUpdated.removeListener(listener);
                 setTimeout(() => {
+                  if (requestId) requestTabs.set(requestId, tab.id);
                   sendToContentScript(tab.id, msg);
                 }, 150);
               }
@@ -72,11 +91,15 @@ function connectNative() {
             timeoutId = setTimeout(() => {
               chrome.tabs.onUpdated.removeListener(listener);
               console.log("[pi-annotate] Navigation timeout - listener removed");
+              if (requestId) {
+                sendToNative({ type: "CANCEL", requestId, reason: "navigation_timeout" });
+              }
             }, 30000);
           });
         } else {
           // No URL or same URL - just activate on current tab
           console.log("[pi-annotate] Activating on current tab:", currentUrl);
+          if (requestId) requestTabs.set(requestId, tabId);
           sendToContentScript(tabId, msg);
         }
       } else {
@@ -96,6 +119,7 @@ function connectNative() {
 // Handle messages from content script
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   console.log("[pi-annotate] From content:", msg.type);
+  const requestId = getRequestId(msg);
   
   // Handle screenshot capture
   if (msg.type === "CAPTURE_SCREENSHOT") {
@@ -118,17 +142,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   
   // Forward to native host
   if (["ANNOTATIONS_COMPLETE", "CANCEL"].includes(msg.type)) {
-    if (nativePort) {
-      console.log("[pi-annotate] Forwarding to native host:", msg.type);
-      try {
-        nativePort.postMessage(msg);
-        console.log("[pi-annotate] Message sent to native host");
-      } catch (err) {
-        console.error("[pi-annotate] Failed to send to native host:", err);
-      }
-    } else {
-      console.error("[pi-annotate] Cannot forward - native port not connected!");
-    }
+    if (requestId) requestTabs.delete(requestId);
+    console.log("[pi-annotate] Forwarding to native host:", msg.type);
+    sendToNative(msg);
   }
 });
 

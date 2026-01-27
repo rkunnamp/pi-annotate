@@ -27,8 +27,8 @@
   
   // HTML escape to prevent XSS when inserting user-controlled content
   function escapeHtml(str) {
-    if (!str) return "";
-    return str
+    if (str === null || str === undefined) return "";
+    return String(str)
       .replace(/&/g, "&amp;")
       .replace(/</g, "&lt;")
       .replace(/>/g, "&gt;")
@@ -421,7 +421,7 @@
     console.log("[pi-annotate] Received:", msg.type);
     
     if (msg.type === "START_ANNOTATION") {
-      requestId = msg.id || null;
+      requestId = msg.requestId || msg.id || null;
       activate();
     } else if (msg.type === "TOGGLE_PICKER") {
       if (isActive) {
@@ -727,7 +727,10 @@
     } else {
       // Not selected - add it
       const addToExisting = multiSelectMode || e.shiftKey;
-      if (!addToExisting) selectedElements = [];
+      if (!addToExisting) {
+        selectedElements = [];
+        elementScreenshots = new Map(); // Clear screenshot states too
+      }
       selectElement(el);
     }
     
@@ -879,6 +882,7 @@
   
   function updateMarkers() {
     if (!markersContainer) return;
+    pruneStaleSelections();
     markersContainer.innerHTML = "";
     
     selectedElements.forEach((sel, i) => {
@@ -904,6 +908,7 @@
   function updateChips() {
     const container = document.getElementById("pi-chips");
     if (!container) return;
+    pruneStaleSelections();
     
     if (!selectedElements.length) {
       container.innerHTML = '<span class="pi-empty">Click an element on the page to select it</span>';
@@ -1018,6 +1023,25 @@
     };
   }
   
+  function pruneStaleSelections() {
+    if (!selectedElements.length) return;
+    const nextSelections = [];
+    const nextScreenshots = new Map();
+    selectedElements.forEach((sel, i) => {
+      if (sel?.element && document.contains(sel.element)) {
+        const nextIndex = nextSelections.length;
+        nextSelections.push(sel);
+        if (elementScreenshots.has(i)) {
+          nextScreenshots.set(nextIndex, elementScreenshots.get(i));
+        }
+      }
+    });
+    if (nextSelections.length !== selectedElements.length) {
+      selectedElements = nextSelections;
+      elementScreenshots = nextScreenshots;
+    }
+  }
+  
   // ─────────────────────────────────────────────────────────────────────
   // Screenshot Cropping
   // ─────────────────────────────────────────────────────────────────────
@@ -1036,16 +1060,28 @@
         let maxX = Math.min(window.innerWidth, rect.right + SCREENSHOT_PADDING);
         let maxY = Math.min(window.innerHeight, rect.bottom + SCREENSHOT_PADDING);
         
+        // Ensure valid dimensions (element may be off-screen)
+        const cropW = Math.max(1, (maxX - minX) * dpr);
+        const cropH = Math.max(1, (maxY - minY) * dpr);
+        
+        // If element is completely off-screen, return full screenshot
+        if (maxX <= minX || maxY <= minY) {
+          resolve(dataUrl);
+          return;
+        }
+        
         // Scale for device pixel ratio
         const cropX = minX * dpr;
         const cropY = minY * dpr;
-        const cropW = (maxX - minX) * dpr;
-        const cropH = (maxY - minY) * dpr;
         
         const canvas = document.createElement("canvas");
         canvas.width = cropW;
         canvas.height = cropH;
         const ctx = canvas.getContext("2d");
+        if (!ctx) {
+          resolve(dataUrl);
+          return;
+        }
         
         ctx.drawImage(img, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
         
@@ -1066,6 +1102,7 @@
     const fullPage = document.getElementById("pi-fullpage")?.checked ?? false;
     
     // Prepare data (without DOM refs)
+    pruneStaleSelections();
     const elements = selectedElements.map(({ element, ...rest }) => rest);
     
     // Capture screenshots
