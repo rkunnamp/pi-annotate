@@ -19,12 +19,14 @@ Figma-like annotation experience with floating inline note cards. DevTools-like 
 
 ## Highlights
 
+- **DevTools context capture** — Box model, accessibility, and all attributes captured automatically per element
+- **Debug mode** — Toggle to capture computed styles, parent context, and CSS variables
 - **Inline note cards** — Each selected element gets a draggable floating note card
 - **Per-element comments** — Add specific instructions for each element
 - **Per-element screenshots** — Each selected element gets its own cropped image
-- **📷 toggle per element** — Choose which elements to screenshot
+- **Full screenshot badges** — Numbered badges drawn on full-page screenshots to identify elements
+- **Restricted tab handling** — Opens a new tab when current tab is `chrome://` or other restricted URLs
 - **Vanilla JS** — No build step, no framework
-- **SVG connectors** — Curved lines connect notes to elements
 
 ## Quick Start
 
@@ -93,6 +95,12 @@ Restart Pi to load the extension.
 
 ## Features
 
+**DevTools Context Capture**
+- **Box model** — Content dimensions, padding, border, and margin breakdown
+- **Accessibility** — Role, accessible name, focusable, disabled, ARIA states
+- **All attributes** — Every HTML attribute captured automatically
+- **Debug mode** — Opt-in toggle for computed styles (40+ properties), parent context, CSS variables (up to 50)
+
 **Element Picker**
 - Hover highlights with element info tooltip
 - Click to select → Note card auto-opens
@@ -109,14 +117,21 @@ Restart Pi to load the extension.
 **Smart Screenshots**
 - **Individual crops** — Each element gets its own focused screenshot
 - **20px padding** — Clean cropping with breathing room
-- **Full page option** — Override to capture entire viewport
+- **Full page option** — Numbered badges drawn on screenshot to identify elements
 - **Per-element toggle** — Disable screenshots on specific elements
 
-**Simplified Panel**
+**Toolbar**
 - Mode toggles (Single/Multi) for selection behavior
-- Screenshot mode (Each/Full/None)
+- Screenshot mode (Crop/Full/None)
+- Debug mode checkbox
 - Context input for overall description
 - Expand/collapse all notes buttons
+
+**Restricted Tab Handling**
+- Detects `chrome://`, `chrome-extension://`, `edge://`, `about:`, `devtools://`, `view-source:` URLs
+- Opens a new tab when a URL is provided and current tab is restricted
+- Returns immediate error when no URL is provided on a restricted tab
+- Popup button and keyboard shortcut auto-inject content script on fresh tabs
 
 ## Output Format
 
@@ -134,6 +149,9 @@ Restart Pi to load the extension.
    - Classes: `btn, btn-primary`
    - Text: "Submit"
    - Size: 120×40px
+   - **Box Model:** 96×24 content, padding 8/16, border 1, margin 0/8
+   - **Attributes:** type="submit", data-testid="submit"
+   - **Accessibility:** role=button, name="Submit", focusable=true, disabled=false
    - **Comment:** Make this blue with rounded corners
 
 2. **div**
@@ -141,6 +159,8 @@ Restart Pi to load the extension.
    - Classes: `error-message, hidden`
    - Text: "Please fill required fields"
    - Size: 300×20px
+   - **Box Model:** 300×20 content, padding 0, border 0, margin 0/0/8
+   - **Accessibility:** focusable=false, disabled=false
    - **Comment:** This should appear in red, not hidden
 
 ### Screenshots
@@ -148,6 +168,8 @@ Restart Pi to load the extension.
 - Element 1: /var/folders/.../pi-annotate-1706012345678-el1.png
 - Element 2: /var/folders/.../pi-annotate-1706012345678-el2.png
 ```
+
+With **Debug mode** enabled, each element also includes computed styles, parent context, and CSS variables.
 
 ## Architecture
 
@@ -242,8 +264,8 @@ tail -f /tmp/pi-annotate-host.log
 | Issue | Solution |
 |-------|----------|
 | UI doesn't appear | Refresh page, or check service worker console |
-| "Cannot access chrome:// URL" | Normal — navigate to a regular webpage |
-| Screenshots not working | Check "Screenshots" checkbox is enabled |
+| "restricted URL" error | Provide a URL: `/annotate https://example.com` — opens a new tab automatically |
+| Screenshots not working | Check screenshot mode is set to "Crop" or "Full" |
 | Native host not connecting | Click extension icon to check status; re-run install command |
 | "Extension ID mismatch" | Copy install command from popup and re-run |
 | Socket errors | Check if socket exists: `ls -la /tmp/pi-annotate.sock` |

@@ -1,5 +1,5 @@
 /**
- * Pi Annotate - Content Script (v0.3.0)
+ * Pi Annotate - Content Script (v0.3.1)
  * 
  * DevTools-like element picker with inline note cards:
  * - Hover to highlight elements
@@ -588,6 +588,10 @@
       } else {
         activate();
       }
+    } else if (msg.type === "CANCEL") {
+      if (isActive) {
+        deactivate();
+      }
     }
   });
   
@@ -718,6 +722,8 @@
     requestId = null;
     multiSelectMode = false;
     screenshotMode = "each";
+    debugMode = false;
+    resetCSSVarCache();
     
     console.log("[pi-annotate] Deactivated");
   }
@@ -2291,5 +2297,5 @@
     }
   }
   
-  console.log("[pi-annotate] Content script ready (v0.3.0)");
+  console.log("[pi-annotate] Content script ready (v0.3.1)");
 })();

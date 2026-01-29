@@ -59,13 +59,10 @@ document.getElementById('copy-cmd').addEventListener('click', (e) => {
   copyToClipboard(installCmd, e.target);
 });
 
-// Start annotation button
-document.getElementById('start-btn')?.addEventListener('click', async () => {
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  if (tab?.id) {
-    chrome.tabs.sendMessage(tab.id, { type: "TOGGLE_PICKER" });
-    window.close();
-  }
+// Start annotation button — routes through background script which handles injection
+document.getElementById('start-btn')?.addEventListener('click', () => {
+  chrome.runtime.sendMessage({ type: "TOGGLE_PICKER" });
+  window.close();
 });
 
 // Retry button

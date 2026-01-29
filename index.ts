@@ -218,9 +218,11 @@ export default function (pi: ExtensionAPI) {
   async function formatResult(result: AnnotationResult): Promise<string> {
     if (!result.success) {
       if (result.cancelled) {
-        // Provide meaningful message based on reason
         if (result.reason?.includes("Another terminal")) {
           return `Annotation session ended: ${result.reason}`;
+        }
+        if (result.reason && result.reason !== "user") {
+          return `Annotation cancelled: ${result.reason}`;
         }
         return "Annotation cancelled by user.";
       }

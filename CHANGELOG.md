@@ -2,6 +2,25 @@
 
 All notable changes to Pi Annotate.
 
+## [0.3.1] - 2026-01-29
+
+### Fixed
+- **Silent failure on restricted tabs** — When invoked on `chrome://`, `about:`, or other restricted URLs, the agent now gets an immediate error instead of hanging for 5 minutes
+- **No active tab** — If no browser tab is available, returns an error immediately instead of failing silently
+- **Popup/shortcut on fresh tabs** — "Start Annotation" button and keyboard shortcut now inject the content script automatically on tabs where it hasn't loaded yet
+- **Annotation UI not dismissed on abort/timeout** — Content script now handles incoming `CANCEL` messages (from agent abort or tool timeout) and closes the annotation UI
+
+### Added
+- **New tab fallback** — When current tab is restricted and a URL is provided, opens a new tab instead of failing
+- **`isRestrictedUrl()` helper** — Detects `chrome://`, `chrome-extension://`, `edge://`, `about:`, `devtools://`, `view-source:` URLs
+- **`injectAfterLoad()` helper** — Shared load-wait + inject pattern used by both navigate and create-tab paths
+- **`togglePicker()` function** — Single entry point for popup button and keyboard shortcut, routes through background script with automatic content script injection
+
+### Changed
+- **Popup button simplified** — Routes through background script instead of injecting directly, eliminating duplicated injection logic
+- **`sendToContentScript` reports errors** — On injection failure, sends `CANCEL` back to native host with error details instead of swallowing the error
+- **`onMessage` log label** — Changed from `"From content:"` to `"Message:"` since popup messages now route through the same handler
+
 ## [0.3.0] - 2026-01-28
 
 ### Added
