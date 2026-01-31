@@ -33,7 +33,7 @@ Figma-like annotation experience with floating inline note cards. DevTools-like 
 ### 1. Install Pi Extension
 
 ```bash
-pi install github.com/nicobailon/pi-annotate
+pi install npm:pi-annotate
 ```
 
 Restart pi to load the extension.
@@ -43,14 +43,13 @@ Restart pi to load the extension.
 1. Open `chrome://extensions`
 2. Enable **Developer mode**
 3. Click **Load unpacked**
-4. Select `~/.pi/agent/git/pi-annotate/chrome-extension/`
+4. Select the `chrome-extension/` folder inside the installed package
 
 ### 3. Install Native Host
 
-Click the **Pi Annotate extension icon** in the Chrome toolbar, then click **Copy** next to the install command. Run it:
+Click the **Pi Annotate extension icon** in the Chrome toolbar, then click **Copy** next to the install command. Run it in the `chrome-extension/native/` directory of the installed package:
 
 ```bash
-cd ~/.pi/agent/git/pi-annotate/chrome-extension/native
 ./install.sh <extension-id>
 ```
 
@@ -267,7 +266,7 @@ tail -f /tmp/pi-annotate-host.log
 
 ```bash
 # Re-install native host
-cd ~/.pi/agent/git/pi-annotate/chrome-extension/native
+# From chrome-extension/native/ in the installed package
 ./install.sh <extension-id>
 
 # Restart Chrome completely
@@ -279,9 +278,6 @@ cd ~/.pi/agent/git/pi-annotate/chrome-extension/native
 ```bash
 # Check manifest exists
 cat ~/Library/Application\ Support/Google/Chrome/NativeMessagingHosts/com.pi.annotate.json
-
-# Check host is executable
-ls -la ~/.pi/agent/git/pi-annotate/chrome-extension/native/host.cjs
 ```
 
 ## Design Philosophy
