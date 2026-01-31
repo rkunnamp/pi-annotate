@@ -36,7 +36,12 @@ export default function (pi: ExtensionAPI) {
     try {
       await connectToHost();
     } catch (err) {
-      ctx.ui?.notify("Chrome extension not connected. Make sure Pi Annotate is installed.", "error");
+      const detail = err instanceof Error ? err.message : String(err);
+      ctx.ui?.notify(
+        `Chrome extension not connected. (${detail})\n` +
+          `Open Chrome on any regular webpage (https://...), ensure the Pi Annotate extension is loaded, then retry.`,
+        "error"
+      );
       return;
     }
     
@@ -71,9 +76,20 @@ export default function (pi: ExtensionAPI) {
         try {
           authToken = fs.readFileSync(TOKEN_PATH, "utf8").trim();
         } catch (err) {
-          reject(new Error("Missing auth token; is the native host running?"));
+          const detail = err instanceof Error ? err.message : String(err);
+          reject(new Error(`Missing auth token at ${TOKEN_PATH}. Is the Chrome native host running? (${detail})`));
           return;
         }
+      }
+
+      // Helpful preflight error (otherwise net.createConnection can be opaque)
+      try {
+        if (!fs.existsSync(SOCKET_PATH)) {
+          reject(new Error(`Missing socket at ${SOCKET_PATH}. The Chrome extension/native host is likely not running.`));
+          return;
+        }
+      } catch {
+        // ignore
       }
 
       browserSocket = net.createConnection(SOCKET_PATH);

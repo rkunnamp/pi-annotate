@@ -7,6 +7,19 @@
 
 let nativePort = null;
 const requestTabs = new Map();
+let lastNativeDisconnectError = null;
+
+// Keep-alive ports from content scripts. Holding a runtime Port open keeps the
+// MV3 service worker alive, which in turn keeps the native messaging host alive.
+const keepAlivePorts = new Set();
+
+chrome.runtime.onConnect.addListener((port) => {
+  if (port?.name !== "pi-annotate-keepalive") return;
+  keepAlivePorts.add(port);
+  port.onDisconnect.addListener(() => keepAlivePorts.delete(port));
+  // We don't need to do anything with the messages; they just keep the channel active.
+  port.onMessage.addListener(() => {});
+});
 
 function getRequestId(msg) {
   return typeof msg.requestId === "number" ? msg.requestId : (typeof msg.id === "number" ? msg.id : null);
@@ -27,6 +40,37 @@ function sendToNative(msg) {
   } catch (err) {
     console.error("[pi-annotate] Failed to send to native host:", err);
   }
+}
+
+// One-shot PING/PONG check through the already-established nativePort
+let pendingPongResolvers = [];
+function pingNative(timeoutMs = 1500) {
+  return new Promise((resolve) => {
+    if (!nativePort) {
+      resolve({ ok: false, detail: "Native host not connected" });
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      // remove resolver if still present
+      pendingPongResolvers = pendingPongResolvers.filter(r => r !== resolver);
+      resolve({ ok: false, detail: "Timeout - native host not responding" });
+    }, timeoutMs);
+
+    const resolver = () => {
+      clearTimeout(timer);
+      resolve({ ok: true });
+    };
+
+    pendingPongResolvers.push(resolver);
+    try {
+      nativePort.postMessage({ type: "PING" });
+    } catch (e) {
+      clearTimeout(timer);
+      pendingPongResolvers = pendingPongResolvers.filter(r => r !== resolver);
+      resolve({ ok: false, detail: e?.message || String(e) });
+    }
+  });
 }
 
 // Send message to content script, injecting it first if needed
@@ -95,9 +139,17 @@ async function togglePicker() {
 function connectNative() {
   console.log("[pi-annotate] Connecting to native host...");
   nativePort = chrome.runtime.connectNative("com.pi.annotate");
+  lastNativeDisconnectError = null;
   
   nativePort.onMessage.addListener((msg) => {
     console.log("[pi-annotate] From native host:", msg);
+
+    // Handle native host health check without touching tabs/injection
+    if (msg?.type === "PONG") {
+      const r = pendingPongResolvers.shift();
+      if (r) r();
+      return;
+    }
     
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
       if (!tabs[0]?.id) {
@@ -156,6 +208,9 @@ function connectNative() {
   
   nativePort.onDisconnect.addListener(() => {
     console.log("[pi-annotate] Native host disconnected");
+    lastNativeDisconnectError = chrome.runtime.lastError?.message || null;
+    // Fail any pending pings
+    pendingPongResolvers = [];
     nativePort = null;
     setTimeout(connectNative, 2000);
   });
@@ -164,6 +219,31 @@ function connectNative() {
 // Handle messages from content script and popup
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   console.log("[pi-annotate] Message:", msg.type);
+
+  // Popup connection check (avoids spawning a second native host from the popup)
+  if (msg.type === "CHECK_NATIVE_CONNECTION") {
+    (async () => {
+      try {
+        if (!nativePort) connectNative();
+        const res = await pingNative(1500);
+        if (res.ok) {
+          sendResponse({ connected: true });
+        } else {
+          const detail = lastNativeDisconnectError || res.detail || "Native host not responding";
+          if (detail.includes("not found")) {
+            sendResponse({ connected: false, status: "not_installed", detail });
+          } else if (detail.includes("forbidden")) {
+            sendResponse({ connected: false, status: "not_installed", detail: "Extension ID mismatch - reinstall native host" });
+          } else {
+            sendResponse({ connected: false, status: "trouble", detail });
+          }
+        }
+      } catch (e) {
+        sendResponse({ connected: false, status: "trouble", detail: e?.message || String(e) });
+      }
+    })();
+    return true;
+  }
   
   if (msg.type === "TOGGLE_PICKER") {
     togglePicker();

@@ -14,6 +14,45 @@
   const LOADED_KEY = "__piAnnotate_" + chrome.runtime.id;
   if (window[LOADED_KEY]) return;
   window[LOADED_KEY] = true;
+
+  // Keep the MV3 service worker alive.
+  //
+  // Why: Pi talks to the native host over /tmp/pi-annotate.sock. That socket is
+  // only present while the Chrome extension's background service worker is
+  // running and connected to the native messaging host.
+  //
+  // MV3 service workers can go inactive when idle; holding a long-lived Port to
+  // the background keeps it alive so `/annotate` can connect reliably.
+  const KEEPALIVE_PORT_NAME = "pi-annotate-keepalive";
+  const KEEPALIVE_INTERVAL_MS = 25_000;
+  let keepAlivePort = null;
+  let keepAliveTimer = null;
+
+  function startKeepAlive() {
+    try {
+      keepAlivePort = chrome.runtime.connect({ name: KEEPALIVE_PORT_NAME });
+
+      // Periodically send a small message to keep the channel (and SW) active.
+      keepAliveTimer = setInterval(() => {
+        try {
+          keepAlivePort?.postMessage({ type: "KEEPALIVE", ts: Date.now() });
+        } catch {}
+      }, KEEPALIVE_INTERVAL_MS);
+
+      keepAlivePort.onDisconnect.addListener(() => {
+        try { if (keepAliveTimer) clearInterval(keepAliveTimer); } catch {}
+        keepAliveTimer = null;
+        keepAlivePort = null;
+        // Retry (SW might have been restarted or extension reloaded)
+        setTimeout(startKeepAlive, 1000);
+      });
+    } catch {
+      // Retry if connect fails temporarily
+      setTimeout(startKeepAlive, 2000);
+    }
+  }
+
+  startKeepAlive();
   
   // ─────────────────────────────────────────────────────────────────────
   // Constants
